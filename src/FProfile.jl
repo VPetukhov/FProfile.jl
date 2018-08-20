@@ -1,19 +1,18 @@
 # Copyright notice: this file contains several functions derived from Julia's profile.jl
 
-# ip = instruction pointer 
+# ip = instruction pointer
 # li = line-info
 
-__precompile__()
 module FProfile
 
 export @fprofile, backtraces, tree, flat
 export get_stackframe, get_method, get_specialization, get_file, get_function, get_module,
        is_C_call, is_inlined, filter_bloodline, prune, details
 
-using Base: Profile
 using Base.Core: MethodInstance
-using Base.Profile: ProfileFormat, LineInfoFlatDict, LineInfoDict, StackFrame,
-    tree_aggregate, flatten, purgeC, tree_format, UNKNOWN, show_spec_linfo,
+using Profile
+using Profile: ProfileFormat, LineInfoFlatDict, LineInfoDict, StackFrame,
+    flatten, tree_format, UNKNOWN, show_spec_linfo,
     rtruncto, ltruncto, tree_format_linewidth, count_flat, parse_flat, flatten
 using DataFrames
 using DataStructures: OrderedDict, Accumulator, counter
@@ -54,7 +53,7 @@ macro fprofile(expr, delay=0.001, n=1000000)
         end)
 end
 
-""" `@fprofile(niter::Int, expr)` is shorthand for 
+""" `@fprofile(niter::Int, expr)` is shorthand for
 
 ```julia
     @fprofile for _ in 1:niter
@@ -135,7 +134,7 @@ function backtraces(pd::ProfileData; flatten=true, C=false)
     if flatten
         data, lidict = Profile.flatten(data, lidict)
     end
-    data, counts = Profile.tree_aggregate(data)
+    data, counts = tree_aggregate(data)
     out = BackTraces(0)
     for (count, backtrace) in zip(counts, data)
         new_trace = StackFrame[lidict[d] for d in backtrace if C || !is_C_call(lidict[d])]
@@ -178,6 +177,27 @@ end
 
 ################################################################################
 # tree view
+
+function tree_aggregate(data::Vector{UInt64})
+    iz = findall(iszero, data)  # find the breaks between backtraces
+    treecount = Dict{Vector{UInt64},Int}()
+    istart = 1
+    for iend in iz
+        tmp = data[iend - 1 : -1 : istart]
+        treecount[tmp] = get(treecount, tmp, 0) + 1
+        istart = iend + 1
+    end
+    bt = Vector{Vector{UInt64}}()
+    counts = Vector{Int}()
+    for (k, v) in treecount
+        if !isempty(k)
+            push!(bt, k)
+            push!(counts, v)
+        end
+    end
+    return (bt, counts)
+end
+
 
 """ `Node(object, count::Int, children::Vector{Node})` represents the `tree`
 view of the profiling data. `object` is a `StackFrame`, unless combineby is specified. """
@@ -466,9 +486,9 @@ function flat(btraces::BackTraces;
     return sort(df, percent ? :count_pct : :count, rev=true)
 end
 
-flat(pd::ProfileData, _module::Tuple; kwargs...) = 
+flat(pd::ProfileData, _module::Tuple; kwargs...) =
     flat(pd; kwargs..., _module=_module)
-flat(pd::ProfileData, _module::Module; kwargs...) = 
+flat(pd::ProfileData, _module::Module; kwargs...) =
     flat(pd; kwargs..., _module=(_module,))
 
 """ `df_combineby(df::DataFrame)` returns by what this `df` was combined. """
@@ -511,9 +531,9 @@ function flat(pd1::ProfileData, pd2::ProfileData; _module=nothing, kwargs...)
     return sort(df, names(df)[3], rev=true)
 end
 
-flat(pd1::ProfileData, pd2::ProfileData, _module::Tuple; kwargs...) = 
+flat(pd1::ProfileData, pd2::ProfileData, _module::Tuple; kwargs...) =
     flat(pd1, pd2; kwargs..., _module=_module)
-flat(pd1::ProfileData, pd2::ProfileData, _module::Module; kwargs...) = 
+flat(pd1::ProfileData, pd2::ProfileData, _module::Module; kwargs...) =
     flat(pd1, pd2; kwargs..., _module=(_module,))
 
 ################################################################################

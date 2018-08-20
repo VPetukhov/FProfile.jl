@@ -1,5 +1,6 @@
 using FProfile
-using Base.Test
 using NBInclude
+using Profile
+using Test
 
 nbinclude("../Manual.ipynb")
